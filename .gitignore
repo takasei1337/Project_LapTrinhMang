@@ -9,3 +9,6 @@
 
 # VS Code local settings
 .vscode/
+
+*.db
+*.sqlite
