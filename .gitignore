@@ -1,0 +1,11 @@
+# Compiled executables
+/server/server
+
+# Object files
+*.o
+
+# Debug files
+*.out
+
+# VS Code local settings
+.vscode/
