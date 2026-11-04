@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
+#include <limits.h>
 #include <sys/random.h>
 #include <argon2.h>
 #include <sqlite3.h>
@@ -164,5 +165,85 @@ int auth_register(sqlite3 *db, const char *username, const char *password)
     }
 
     return AUTH_ERR_DATABASE;
+}
+
+int auth_login(sqlite3 *db, const char *username, const char *password)
+{
+    /* 1. Kiem tra tham so dau vao */
+    if (db == NULL || !is_valid_username(username) || !is_valid_password(password)) {
+        return AUTH_ERR_INVALID_PARAM;
+    }
+
+    /* 2. Chuan bi cau truy van lay thong tin tai khoan */
+    const char *sql = "SELECT id, password_hash FROM users WHERE username = ?;";
+    sqlite3_stmt *stmt = NULL;
+
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK || stmt == NULL) {
+        return AUTH_ERR_DATABASE;
+    }
+
+    rc = sqlite3_bind_text(stmt, 1, username, -1, SQLITE_STATIC);
+    if (rc != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        return AUTH_ERR_DATABASE;
+    }
+
+    int step_rc = sqlite3_step(stmt);
+
+    if (step_rc == SQLITE_DONE) {
+        /* Khong tim thay username trong CSDL */
+        sqlite3_finalize(stmt);
+        return AUTH_ERR_INVALID_CREDENTIALS;
+    }
+
+    if (step_rc != SQLITE_ROW) {
+        /* Loi truy van database */
+        sqlite3_finalize(stmt);
+        return AUTH_ERR_DATABASE;
+    }
+
+    /* 3. Doc id va password_hash */
+    sqlite3_int64 raw_id = sqlite3_column_int64(stmt, 0);
+    const unsigned char *hash_text = sqlite3_column_text(stmt, 1);
+    int hash_bytes = sqlite3_column_bytes(stmt, 1);
+
+    if (raw_id <= 0 || raw_id > INT_MAX) {
+        sqlite3_finalize(stmt);
+        return AUTH_ERR_DATABASE;
+    }
+
+    int user_id = (int)raw_id;
+
+    /* Kiem tra tinh hop le cua chuoi hash (khong NULL, khong rong, khong vuot qua 255 byte) */
+    if (hash_text == NULL || hash_bytes <= 0 || hash_bytes > 255) {
+        sqlite3_finalize(stmt);
+        return AUTH_ERR_HASH_FAILED;
+    }
+
+    /* Sao chep hash sang bo dem an toan truoc khi finalize statement */
+    char hash_copy[256];
+    memcpy(hash_copy, hash_text, (size_t)hash_bytes);
+    hash_copy[hash_bytes] = '\0';
+
+    int fin_rc = sqlite3_finalize(stmt);
+    if (fin_rc != SQLITE_OK) {
+        secure_clean_memory(hash_copy, sizeof(hash_copy));
+        return AUTH_ERR_DATABASE;
+    }
+
+    /* 4. Xac minh mat khau voi Argon2id */
+    int verify_rc = argon2id_verify(hash_copy, password, strlen(password));
+    secure_clean_memory(hash_copy, sizeof(hash_copy));
+
+    if (verify_rc == ARGON2_OK) {
+        return user_id;
+    }
+
+    if (verify_rc == ARGON2_VERIFY_MISMATCH) {
+        return AUTH_ERR_INVALID_CREDENTIALS;
+    }
+
+    return AUTH_ERR_HASH_FAILED;
 }
 
