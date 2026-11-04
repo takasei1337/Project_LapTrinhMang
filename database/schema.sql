@@ -92,3 +92,15 @@ CREATE TABLE IF NOT EXISTS room_questions (
     FOREIGN KEY (room_id) REFERENCES rooms(id),
     FOREIGN KEY (question_id) REFERENCES questions(id)
 );
+
+CREATE TABLE IF NOT EXISTS practice_questions (
+    attempt_id INTEGER NOT NULL,
+    question_id INTEGER NOT NULL,
+    position INTEGER NOT NULL CHECK (position > 0),
+
+    PRIMARY KEY (attempt_id, question_id),
+    UNIQUE (attempt_id, position),
+
+    FOREIGN KEY (attempt_id) REFERENCES exam_attempts(id),
+    FOREIGN KEY (question_id) REFERENCES questions(id)
+);
