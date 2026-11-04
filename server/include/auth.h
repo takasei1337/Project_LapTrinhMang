@@ -4,6 +4,13 @@
 
 #include <sqlite3.h>
 
+/* Ma trang thai tra ve cua module Auth */
+#define AUTH_SUCCESS             0
+#define AUTH_ERR_INVALID_PARAM  -1
+#define AUTH_ERR_USER_EXISTS    -2
+#define AUTH_ERR_HASH_FAILED    -3
+#define AUTH_ERR_DATABASE       -4
+
 /* Dang ky tai khoan moi */
 int auth_register(sqlite3 *db, const char *username,
                   const char *password);

@@ -1,7 +1,7 @@
 
 CC = gcc
 CFLAGS = -std=c11 -Wall -Wextra -g -Iserver/include
-LDLIBS = -lsqlite3 -lcjson
+LDLIBS = -lsqlite3 -lcjson -largon2
 
 TARGET = server/server
 SRC = $(shell find server/src -name '*.c')
