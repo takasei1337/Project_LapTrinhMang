@@ -159,5 +159,18 @@ CREATE TABLE IF NOT EXISTS practice_questions (
     FOREIGN KEY (question_id) REFERENCES questions(id)
 );
 
+CREATE TABLE IF NOT EXISTS sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TEXT NOT NULL,
+    revoked_at TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+
 -- Ghi nhận phiên bản migration nền tảng có sẵn trong schema hiện tại
 INSERT OR IGNORE INTO schema_migrations (version) VALUES ('001_classification');
+INSERT OR IGNORE INTO schema_migrations (version) VALUES ('002_sessions');
