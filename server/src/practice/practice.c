@@ -1,4 +1,5 @@
 #include "practice.h"
+#include "question_selector.h"
 
 #include <cjson/cJSON.h>
 #include <limits.h>
@@ -798,5 +799,345 @@ int practice_submit(sqlite3 *db,
 
     *out_result_json = json_out;
     return PRACTICE_SUCCESS;
+}
+
+/*
+ * ============================================================================
+ * Balanced Practice Implementation
+ * ============================================================================
+ */
+
+static int practice_tx_begin(sqlite3 *db, int caller_has_tx)
+{
+    if (!caller_has_tx) {
+        return sqlite3_exec(db, "BEGIN IMMEDIATE TRANSACTION;", NULL, NULL, NULL);
+    } else {
+        return sqlite3_exec(db, "SAVEPOINT practice_sp;", NULL, NULL, NULL);
+    }
+}
+
+static void practice_tx_rollback(sqlite3 *db, int caller_has_tx)
+{
+    if (!caller_has_tx) {
+        sqlite3_exec(db, "ROLLBACK;", NULL, NULL, NULL);
+    } else {
+        sqlite3_exec(db, "ROLLBACK TO practice_sp;", NULL, NULL, NULL);
+        sqlite3_exec(db, "RELEASE practice_sp;", NULL, NULL, NULL);
+    }
+}
+
+static int practice_tx_commit(sqlite3 *db, int caller_has_tx)
+{
+    if (!caller_has_tx) {
+        return sqlite3_exec(db, "COMMIT;", NULL, NULL, NULL);
+    } else {
+        return sqlite3_exec(db, "RELEASE practice_sp;", NULL, NULL, NULL);
+    }
+}
+
+int practice_start_balanced(sqlite3 *db,
+                            int user_id,
+                            int subject_id,
+                            int chapter_id,
+                            int lesson_id,
+                            const char *difficulty,
+                            int num_questions,
+                            char **out_questions_json)
+{
+    return practice_start_balanced_ex(db, user_id, subject_id, chapter_id,
+                                      lesson_id, 0, difficulty,
+                                      num_questions, out_questions_json);
+}
+
+int practice_start_balanced_ex(sqlite3 *db,
+                               int user_id,
+                               int subject_id,
+                               int chapter_id,
+                               int lesson_id,
+                               int topic_id,
+                               const char *difficulty,
+                               int num_questions,
+                               char **out_questions_json)
+{
+    /* 1. Kiem tra tham so co ban */
+    if (out_questions_json == NULL) {
+        return PRACTICE_ERR_INVALID_PARAM;
+    }
+    *out_questions_json = NULL;
+
+    if (db == NULL || user_id <= 0 || num_questions <= 0 ||
+        num_questions > MAX_PRACTICE_QUESTIONS) {
+        return PRACTICE_ERR_INVALID_PARAM;
+    }
+
+    if (subject_id < 0 || chapter_id < 0 || lesson_id < 0 || topic_id < 0) {
+        return PRACTICE_ERR_INVALID_PARAM;
+    }
+
+    if (difficulty != NULL && difficulty[0] != '\0') {
+        if (strcmp(difficulty, "EASY") != 0 &&
+            strcmp(difficulty, "MEDIUM") != 0 &&
+            strcmp(difficulty, "HARD") != 0) {
+            return PRACTICE_ERR_INVALID_PARAM;
+        }
+    }
+
+    /* 2. Kiem tra autocommit va quan ly transaction/savepoint an toan */
+    int caller_has_tx = (sqlite3_get_autocommit(db) == 0);
+    if (practice_tx_begin(db, caller_has_tx) != SQLITE_OK) {
+        return PRACTICE_ERR_DATABASE;
+    }
+
+    /* 3. Xac minh user_id ton tai */
+    int user_check = check_user_exists(db, user_id);
+    if (user_check == 0) {
+        practice_tx_rollback(db, caller_has_tx);
+        return PRACTICE_ERR_NOT_FOUND;
+    }
+    if (user_check < 0) {
+        practice_tx_rollback(db, caller_has_tx);
+        return PRACTICE_ERR_DATABASE;
+    }
+
+    /* 4. Goi Balanced Question Selector de chon cau hoi */
+    char *sel_json = NULL;
+    int sel_rc = question_selector_balanced_ex(db, subject_id, chapter_id, lesson_id,
+                                               topic_id, difficulty, num_questions,
+                                               &sel_json);
+    if (sel_rc != QUESTION_SELECTOR_SUCCESS || sel_json == NULL) {
+        if (sel_json != NULL) {
+            free(sel_json);
+        }
+        practice_tx_rollback(db, caller_has_tx);
+        if (sel_rc == QUESTION_SELECTOR_ERR_NOT_FOUND) {
+            return PRACTICE_ERR_NOT_FOUND;
+        } else if (sel_rc == QUESTION_SELECTOR_ERR_INVALID_PARAM) {
+            return PRACTICE_ERR_INVALID_PARAM;
+        } else if (sel_rc == QUESTION_SELECTOR_ERR_MEMORY) {
+            return PRACTICE_ERR_MEMORY;
+        }
+        return PRACTICE_ERR_DATABASE;
+    }
+
+    /* 5. Parse ket qua selector va kiem tra chinh sach du so luong */
+    cJSON *sel_root = cJSON_Parse(sel_json);
+    if (sel_root == NULL) {
+        free(sel_json);
+        practice_tx_rollback(db, caller_has_tx);
+        return PRACTICE_ERR_MEMORY;
+    }
+
+    cJSON *item_selected = cJSON_GetObjectItem(sel_root, "selected");
+    cJSON *item_q_arr = cJSON_GetObjectItem(sel_root, "questions");
+
+    if (!cJSON_IsNumber(item_selected) || !cJSON_IsArray(item_q_arr)) {
+        cJSON_Delete(sel_root);
+        free(sel_json);
+        practice_tx_rollback(db, caller_has_tx);
+        return PRACTICE_ERR_DATABASE;
+    }
+
+    int selected_count = item_selected->valueint;
+    int actual_arr_size = cJSON_GetArraySize(item_q_arr);
+
+    /* Chinh sach: neu khong du so cau yeu cau (hoac 0 cau), rollback va khong tao attempt */
+    if (selected_count < num_questions || actual_arr_size < num_questions) {
+        cJSON_Delete(sel_root);
+        free(sel_json);
+        practice_tx_rollback(db, caller_has_tx);
+        return PRACTICE_ERR_INSUFFICIENT_QUESTIONS;
+    }
+
+    /* 6. Tao ban ghi exam_attempts voi mode = 'PRACTICE', room_id = NULL */
+    const char *sql_insert_attempt =
+        "INSERT INTO exam_attempts (room_id, user_id, mode) VALUES (NULL, ?, 'PRACTICE');";
+    sqlite3_stmt *stmt_att = NULL;
+    int rc = sqlite3_prepare_v2(db, sql_insert_attempt, -1, &stmt_att, NULL);
+    if (rc != SQLITE_OK || stmt_att == NULL) {
+        cJSON_Delete(sel_root);
+        free(sel_json);
+        practice_tx_rollback(db, caller_has_tx);
+        return PRACTICE_ERR_DATABASE;
+    }
+
+    sqlite3_bind_int(stmt_att, 1, user_id);
+    int step_att = sqlite3_step(stmt_att);
+    sqlite3_finalize(stmt_att);
+
+    if (step_att != SQLITE_DONE) {
+        cJSON_Delete(sel_root);
+        free(sel_json);
+        practice_tx_rollback(db, caller_has_tx);
+        return PRACTICE_ERR_DATABASE;
+    }
+
+    int attempt_id = (int)sqlite3_last_insert_rowid(db);
+    if (attempt_id <= 0) {
+        cJSON_Delete(sel_root);
+        free(sel_json);
+        practice_tx_rollback(db, caller_has_tx);
+        return PRACTICE_ERR_DATABASE;
+    }
+
+    /* 7. Luu cac cau hoi vao bang practice_questions voi position bat dau tu 1 */
+    const char *sql_insert_pq =
+        "INSERT INTO practice_questions (attempt_id, question_id, position) VALUES (?, ?, ?);";
+    sqlite3_stmt *stmt_pq = NULL;
+    rc = sqlite3_prepare_v2(db, sql_insert_pq, -1, &stmt_pq, NULL);
+    if (rc != SQLITE_OK || stmt_pq == NULL) {
+        cJSON_Delete(sel_root);
+        free(sel_json);
+        practice_tx_rollback(db, caller_has_tx);
+        return PRACTICE_ERR_DATABASE;
+    }
+
+    for (int i = 0; i < num_questions; i++) {
+        cJSON *q_node = cJSON_GetArrayItem(item_q_arr, i);
+        cJSON *item_id = cJSON_GetObjectItem(q_node, "id");
+        int q_id = (item_id && cJSON_IsNumber(item_id)) ? item_id->valueint : 0;
+
+        sqlite3_bind_int(stmt_pq, 1, attempt_id);
+        sqlite3_bind_int(stmt_pq, 2, q_id);
+        sqlite3_bind_int(stmt_pq, 3, i + 1);
+
+        int step_pq = sqlite3_step(stmt_pq);
+        sqlite3_reset(stmt_pq);
+
+        if (step_pq != SQLITE_DONE) {
+            sqlite3_finalize(stmt_pq);
+            cJSON_Delete(sel_root);
+            free(sel_json);
+            practice_tx_rollback(db, caller_has_tx);
+            return PRACTICE_ERR_DATABASE;
+        }
+    }
+    sqlite3_finalize(stmt_pq);
+
+    /* 8. Dong goi ket qua tra ve cho client gom danh sach cau hoi va dap an (tuyet doi khong chua is_correct) */
+    cJSON *client_root = cJSON_CreateObject();
+    if (client_root == NULL) {
+        cJSON_Delete(sel_root);
+        free(sel_json);
+        practice_tx_rollback(db, caller_has_tx);
+        return PRACTICE_ERR_MEMORY;
+    }
+
+    cJSON_AddNumberToObject(client_root, "attempt_id", attempt_id);
+    cJSON_AddStringToObject(client_root, "mode", "PRACTICE");
+    cJSON_AddNumberToObject(client_root, "total_questions", num_questions);
+
+    cJSON *client_q_arr = cJSON_AddArrayToObject(client_root, "questions");
+    if (client_q_arr == NULL) {
+        cJSON_Delete(client_root);
+        cJSON_Delete(sel_root);
+        free(sel_json);
+        practice_tx_rollback(db, caller_has_tx);
+        return PRACTICE_ERR_MEMORY;
+    }
+
+    const char *sql_select_answers =
+        "SELECT id, content FROM answers WHERE question_id = ? ORDER BY id ASC;";
+    sqlite3_stmt *stmt_ans = NULL;
+    rc = sqlite3_prepare_v2(db, sql_select_answers, -1, &stmt_ans, NULL);
+    if (rc != SQLITE_OK || stmt_ans == NULL) {
+        cJSON_Delete(client_root);
+        cJSON_Delete(sel_root);
+        free(sel_json);
+        practice_tx_rollback(db, caller_has_tx);
+        return PRACTICE_ERR_DATABASE;
+    }
+
+    for (int i = 0; i < num_questions; i++) {
+        cJSON *q_node = cJSON_GetArrayItem(item_q_arr, i);
+        cJSON *item_id = cJSON_GetObjectItem(q_node, "id");
+        cJSON *item_cnt = cJSON_GetObjectItem(q_node, "content");
+        cJSON *item_tid = cJSON_GetObjectItem(q_node, "topic_id");
+        cJSON *item_tnm = cJSON_GetObjectItem(q_node, "topic_name");
+        cJSON *item_dif = cJSON_GetObjectItem(q_node, "difficulty");
+
+        int q_id = (item_id && cJSON_IsNumber(item_id)) ? item_id->valueint : 0;
+        const char *q_content = (item_cnt && cJSON_IsString(item_cnt)) ? item_cnt->valuestring : "";
+        int q_topic_id = (item_tid && cJSON_IsNumber(item_tid)) ? item_tid->valueint : 0;
+        const char *q_topic_name = (item_tnm && cJSON_IsString(item_tnm)) ? item_tnm->valuestring : "";
+        const char *q_diff = (item_dif && cJSON_IsString(item_dif)) ? item_dif->valuestring : "";
+
+        cJSON *q_obj = cJSON_CreateObject();
+        if (q_obj == NULL) {
+            sqlite3_finalize(stmt_ans);
+            cJSON_Delete(client_root);
+            cJSON_Delete(sel_root);
+            free(sel_json);
+            practice_tx_rollback(db, caller_has_tx);
+            return PRACTICE_ERR_MEMORY;
+        }
+        cJSON_AddItemToArray(client_q_arr, q_obj);
+
+        cJSON_AddNumberToObject(q_obj, "question_id", q_id);
+        cJSON_AddStringToObject(q_obj, "content", q_content);
+        cJSON_AddNumberToObject(q_obj, "topic_id", q_topic_id);
+        cJSON_AddStringToObject(q_obj, "topic", q_topic_name);
+        cJSON_AddStringToObject(q_obj, "difficulty", q_diff);
+
+        cJSON *answers_arr = cJSON_AddArrayToObject(q_obj, "answers");
+        if (answers_arr == NULL) {
+            sqlite3_finalize(stmt_ans);
+            cJSON_Delete(client_root);
+            cJSON_Delete(sel_root);
+            free(sel_json);
+            practice_tx_rollback(db, caller_has_tx);
+            return PRACTICE_ERR_MEMORY;
+        }
+
+        sqlite3_bind_int(stmt_ans, 1, q_id);
+        int step_ans_rc = SQLITE_DONE;
+        while ((step_ans_rc = sqlite3_step(stmt_ans)) == SQLITE_ROW) {
+            int ans_id = sqlite3_column_int(stmt_ans, 0);
+            const char *ans_content = (const char *)sqlite3_column_text(stmt_ans, 1);
+
+            cJSON *ans_obj = cJSON_CreateObject();
+            if (ans_obj == NULL) {
+                sqlite3_finalize(stmt_ans);
+                cJSON_Delete(client_root);
+                cJSON_Delete(sel_root);
+                free(sel_json);
+                practice_tx_rollback(db, caller_has_tx);
+                return PRACTICE_ERR_MEMORY;
+            }
+            cJSON_AddNumberToObject(ans_obj, "answer_id", ans_id);
+            cJSON_AddStringToObject(ans_obj, "content", ans_content ? ans_content : "");
+            cJSON_AddItemToArray(answers_arr, ans_obj);
+        }
+        sqlite3_reset(stmt_ans);
+
+        if (step_ans_rc != SQLITE_DONE && step_ans_rc != SQLITE_ROW) {
+            sqlite3_finalize(stmt_ans);
+            cJSON_Delete(client_root);
+            cJSON_Delete(sel_root);
+            free(sel_json);
+            practice_tx_rollback(db, caller_has_tx);
+            return PRACTICE_ERR_DATABASE;
+        }
+    }
+    sqlite3_finalize(stmt_ans);
+
+    char *json_out = cJSON_PrintUnformatted(client_root);
+    cJSON_Delete(client_root);
+    cJSON_Delete(sel_root);
+    free(sel_json);
+
+    if (json_out == NULL) {
+        practice_tx_rollback(db, caller_has_tx);
+        return PRACTICE_ERR_MEMORY;
+    }
+
+    /* 9. Commit Transaction / Release Savepoint */
+    if (practice_tx_commit(db, caller_has_tx) != SQLITE_OK) {
+        free(json_out);
+        practice_tx_rollback(db, caller_has_tx);
+        return PRACTICE_ERR_DATABASE;
+    }
+
+    *out_questions_json = json_out;
+    return attempt_id;
 }
 

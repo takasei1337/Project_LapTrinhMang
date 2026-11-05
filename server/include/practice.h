@@ -14,6 +14,7 @@
 #define PRACTICE_ERR_NOT_FOUND             -3  /* Luot luyen tap (attempt_id) khong ton tai hoac khong thuoc user */
 #define PRACTICE_ERR_ALREADY_DONE          -4  /* Luot luyen tap da duoc nop truoc do (chong nop 2 lan) */
 #define PRACTICE_ERR_NOT_ENOUGH_QUESTIONS  -5  /* Ngan hang cau hoi khong du so cau theo bo loc yeu cau */
+#define PRACTICE_ERR_INSUFFICIENT_QUESTIONS -5 /* Thieu so luong cau hoi theo yeu cau cua selector can bang */
 #define PRACTICE_ERR_INVALID_ANSWER        -6  /* Dap an khong hop le, khong thuoc cau hoi hoac cau hoi ngoai bo de */
 #define PRACTICE_ERR_MEMORY                -7  /* Loi cap phat bo nho dong */
 
@@ -53,6 +54,46 @@ int practice_start(sqlite3 *db,
                    const char *difficulty,
                    int num_questions,
                    char **out_questions_json);
+
+/*
+ * ============================================================================
+ * API: practice_start_balanced
+ * ============================================================================
+ *
+ * Khoi tao luot luyen tap moi su dung bo chon can bang Balanced Question Selector:
+ * - Chon ngau nhien N cau hoi can bang giua cac Topic theo cay phan cap
+ *   Subject -> Chapter -> Lesson -> Topic.
+ * - Goi question_selector_balanced() / question_selector_balanced_ex() de chon cau hoi.
+ * - Neu ngan hang cau hoi khong du so cau yeu cau (hoac 0 cau):
+ *   KHONG tao attempt do dang, rollback transaction va tra ve
+ *   PRACTICE_ERR_INSUFFICIENT_QUESTIONS (-5).
+ * - Ghi nhan exam_attempts (mode = 'PRACTICE', room_id = NULL) va practice_questions.
+ * - Dong goi JSON tra ve cho client gom cac cau hoi va lua chon dap an
+ *   (tuyet doi khong chua truong is_correct).
+ * - Tra ve attempt_id (> 0) khi thanh cong.
+ * - Tra ve ma am (< 0) tuong ung voi cac ma loi PRACTICE_ERR_* khi that bai.
+ */
+int practice_start_balanced(sqlite3 *db,
+                            int user_id,
+                            int subject_id,
+                            int chapter_id,
+                            int lesson_id,
+                            const char *difficulty,
+                            int num_questions,
+                            char **out_questions_json);
+
+/*
+ * Phien ban mo rong bo sung topic_id:
+ */
+int practice_start_balanced_ex(sqlite3 *db,
+                               int user_id,
+                               int subject_id,
+                               int chapter_id,
+                               int lesson_id,
+                               int topic_id,
+                               const char *difficulty,
+                               int num_questions,
+                               char **out_questions_json);
 
 /*
  * ============================================================================
