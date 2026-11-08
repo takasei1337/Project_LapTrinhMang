@@ -1,0 +1,170 @@
+:root {
+  --bg: #f5f7fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+h1, h2, h3 { margin: 0 0 12px; }
+.container { max-width: 1040px; margin: 0 auto; padding: 24px 16px 48px; }
+.muted { color: var(--muted); }
+[hidden] { display: none !important; }
+
+/* Thanh tren */
+.topbar {
+  display: flex; align-items: center; gap: 24px;
+  padding: 12px 24px; background: var(--card); border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 10;
+}
+.brand { font-weight: 700; }
+.nav { display: flex; gap: 4px; flex: 1; }
+.nav a { padding: 6px 12px; border-radius: 8px; color: var(--text); text-decoration: none; }
+.nav a:hover { background: var(--bg); }
+.nav a.active { background: #e0e7ff; color: var(--primary-dark); font-weight: 600; }
+.user { display: flex; align-items: center; gap: 12px; }
+.mock-banner { background: #fef3c7; color: #92400e; text-align: center; padding: 6px; font-size: 14px; }
+
+/* The va bo cuc */
+.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.spread { justify-content: space-between; }
+.stack > * + * { margin-top: 16px; }
+
+/* Nut */
+.btn {
+  border: 1px solid transparent; border-radius: 8px; padding: 8px 16px; font-size: 15px;
+  cursor: pointer; background: var(--primary); color: #fff; font-family: inherit;
+}
+.btn:hover { background: var(--primary-dark); }
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+.btn-ghost { background: transparent; color: var(--text); border-color: var(--border); }
+.btn-ghost:hover { background: var(--bg); }
+.btn-danger { background: var(--danger); }
+.btn-danger:hover { background: #b91c1c; }
+.btn-success { background: var(--success); }
+.btn-success:hover { background: #15803d; }
+.btn-sm { padding: 4px 10px; font-size: 13px; }
+
+/* Form */
+.form { display: flex; flex-direction: column; gap: 12px; }
+.form label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 500; }
+.form input {
+  padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 15px; font-family: inherit;
+}
+.form input:focus { outline: 2px solid #bfdbfe; border-color: var(--primary); }
+.form-error { color: var(--danger); font-size: 14px; min-height: 20px; }
+.auth-box { max-width: 380px; margin: 48px auto; }
+
+/* Nhan trang thai */
+.badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.badge-WAITING { background: #e0e7ff; color: #3730a3; }
+.badge-IN_PROGRESS { background: #dcfce7; color: #166534; }
+.badge-FINISHED { background: #f3f4f6; color: #4b5563; }
+.room-meta { color: var(--muted); font-size: 14px; margin: 8px 0 16px; }
+
+/* Lam bai */
+.exam-layout { display: grid; grid-template-columns: 1fr 260px; gap: 16px; align-items: start; }
+@media (max-width: 800px) { .exam-layout { grid-template-columns: 1fr; } }
+.timer { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.timer.warn { color: var(--warning); }
+.timer.danger { color: var(--danger); }
+.question-tag { font-size: 13px; color: var(--muted); }
+.question-content { font-size: 18px; font-weight: 600; margin: 8px 0 16px; }
+.answer {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  padding: 12px 14px; margin-bottom: 10px; border: 1px solid var(--border); border-radius: 8px;
+  background: #fff; cursor: pointer; font-size: 15px; font-family: inherit; color: inherit;
+}
+.answer:hover:not(:disabled) { border-color: var(--primary); }
+.answer.selected { border-color: var(--primary); background: #eff6ff; }
+.answer:disabled { cursor: not-allowed; opacity: .7; }
+.answer .key {
+  width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--bg); font-weight: 600; flex-shrink: 0;
+}
+.answer.selected .key { background: var(--primary); color: #fff; }
+.save-state { font-size: 13px; min-height: 20px; }
+.save-state.saving { color: var(--warning); }
+.save-state.saved { color: var(--success); }
+.save-state.error { color: var(--danger); }
+.qnav { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 12px 0; }
+.qnav button {
+  padding: 8px 0; border: 1px solid var(--border); border-radius: 6px; background: #fff; cursor: pointer; font-family: inherit;
+}
+.qnav button.answered { background: #dcfce7; border-color: #86efac; }
+.qnav button.saving { background: #fef3c7; border-color: #fcd34d; }
+.qnav button.current { outline: 2px solid var(--primary); }
+.legend { font-size: 12px; color: var(--muted); }
+
+/* Ket qua */
+.score-big { font-size: 64px; font-weight: 800; color: var(--primary); line-height: 1; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+.stat { background: var(--bg); border-radius: 8px; padding: 12px; }
+.stat .label { font-size: 13px; color: var(--muted); }
+.stat .value { font-size: 22px; font-weight: 700; }
+
+/* Bang */
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: 14px; }
+th { color: var(--muted); font-weight: 600; }
+
+/* Bieu do */
+.chart svg { width: 100%; height: auto; display: block; }
+.chart .axis { stroke: var(--border); }
+.chart .grid-line { stroke: #f1f5f9; }
+.chart .line { fill: none; stroke: var(--primary); stroke-width: 2.5; }
+.chart .dot { fill: var(--primary); }
+.chart text { font-size: 11px; fill: var(--muted); }
+
+/* Modal xac nhan */
+.modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 20; }
+.modal { max-width: 420px; width: 90%; }
+
+/* Thong bao */
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #111827; color: #fff; padding: 10px 18px; border-radius: 8px; z-index: 30; font-size: 14px;
+}
+.toast.error { background: var(--danger); }
+.toast.success { background: var(--success); }
+.empty { text-align: center; padding: 32px; color: var(--muted); }
+
+/* Xem lai bai lam */
+.filter .btn.active { background: var(--primary); color: #fff; }
+.review-q.correct { border-left: 4px solid var(--success); }
+.review-q.wrong { border-left: 4px solid var(--danger); }
+.review-q.unanswered { border-left: 4px solid #9ca3af; }
+.result-tag { font-size: 13px; font-weight: 600; }
+.result-tag.correct { color: var(--success); }
+.result-tag.wrong { color: var(--danger); }
+.result-tag.unanswered { color: var(--muted); }
+.answer.review { cursor: default; }
+.answer.review:hover { border-color: var(--border); }
+.answer.is-correct { border-color: #86efac; background: #f0fdf4; }
+.answer.is-correct .key { background: var(--success); color: #fff; }
+.answer.is-wrong { border-color: #fca5a5; background: #fef2f2; }
+.answer.is-wrong .key { background: var(--danger); color: #fff; }
+.answer-note { font-size: 12px; font-weight: 600; color: var(--muted); }
+.answer.is-correct .answer-note { color: var(--success); }
+.answer.is-wrong .answer-note { color: var(--danger); }
+
+/* Ket qua phong */
+.chip { display: inline-block; padding: 4px 12px; border-radius: 999px; background: #fee2e2; color: #991b1b; font-size: 13px; }
+.chart .bar { fill: var(--primary); }
+.chart .bar-label { fill: var(--text); font-weight: 600; }
